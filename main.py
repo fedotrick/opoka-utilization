@@ -2,8 +2,8 @@ import sys
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                               QHBoxLayout, QTableWidget, QTableWidgetItem, QLabel, 
                               QComboBox, QPushButton, QHeaderView, QFrame, QMessageBox, QLineEdit, QGraphicsDropShadowEffect)
-from PySide6.QtCore import Qt, QSize
-from PySide6.QtGui import QColor
+from PySide6.QtCore import Qt, QSize, QPropertyAnimation, QEasingCurve
+from PySide6.QtGui import QColor, QIcon, QLinearGradient, QPalette
 import pandas as pd
 from datetime import datetime, timedelta
 import calendar
@@ -69,7 +69,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Учет использования опок")
-        self.setFixedSize(1370, 800)
+        self.setFixedSize(1370, 850)
         
         self.current_date = datetime.now()
         self.opoka_data_manager = OpokaDataManager()
@@ -95,25 +95,60 @@ class MainWindow(QMainWindow):
         export_button = QPushButton("Экспорт статистики")
         export_button.clicked.connect(self.export_statistics)
         
-        # Стилизация кнопок
+        # Обновленный стиль кнопок с иконками и анимацией
         button_style = """
             QPushButton {
-                background-color: #2196F3;
+                background: qlineargradient(
+                    x1: 0, y1: 0, x2: 0, y2: 1,
+                    stop: 0 #2196F3, stop: 1 #1976D2
+                );
                 color: white;
                 border-radius: 4px;
                 padding: 5px 10px;
                 font-size: 11px;
+                border: none;
             }
             QPushButton:hover {
-                background-color: #1976D2;
+                background: qlineargradient(
+                    x1: 0, y1: 0, x2: 0, y2: 1,
+                    stop: 0 #1E88E5, stop: 1 #1565C0
+                );
             }
             QPushButton:pressed {
-                background-color: #0D47A1;
+                background: qlineargradient(
+                    x1: 0, y1: 0, x2: 0, y2: 1,
+                    stop: 0 #1565C0, stop: 1 #0D47A1
+                );
+                padding: 6px 9px 4px 11px;
             }
         """
         
         self.recalc_button.setStyleSheet(button_style)
         export_button.setStyleSheet(button_style)
+        
+        # Добавляем иконки к кнопкам
+        self.recalc_button.setIcon(QIcon("icons/refresh.png"))  # Нужно добавить иконки
+        self.recalc_button.setIconSize(QSize(16, 16))
+        export_button.setIcon(QIcon("icons/export.png"))
+        export_button.setIconSize(QSize(16, 16))
+        
+        # Добавляем разделители
+        line = QFrame()
+        line.setFrameShape(QFrame.HLine)
+        line.setFrameShadow(QFrame.Sunken)
+        line.setStyleSheet("""
+            QFrame {
+                border: none;
+                background: qlineargradient(
+                    x1: 0, y1: 0, x2: 1, y2: 0,
+                    stop: 0 #E0E0E0, stop: 0.5 #9E9E9E, stop: 1 #E0E0E0
+                );
+                height: 1px;
+            }
+        """)
+        
+        # Добавляем разделитель после верхней панели
+        header_layout.addWidget(line)
         
         top_layout.addWidget(date_label)
         top_layout.addWidget(self.recalc_button)
@@ -208,15 +243,19 @@ class MainWindow(QMainWindow):
         # Устанавливаем главный контейнер
         self.setCentralWidget(main_container)
         
-        # Добавляем стили
+        # Обновляем стиль статистики с градиентом
         stats_style = """
             QFrame {
-                background-color: white;
+                background: qlineargradient(
+                    x1: 0, y1: 0, x2: 0, y2: 1,
+                    stop: 0 #FFFFFF, stop: 1 #F5F5F5
+                );
                 border: 1px solid #BDBDBD;
                 border-radius: 8px;
             }
             QLabel {
                 font-size: 11px;
+                background: transparent;
             }
             QLabel[header="true"] {
                 font-weight: bold;
@@ -453,6 +492,30 @@ class MainWindow(QMainWindow):
             )
             
             row_widget.setToolTip(tooltip_text)
+            
+            # Добавляем анимацию при наведении на строку статистики
+            self.add_hover_animation(row_widget)
+            
+            # Обновляем стиль кнопки ремонта
+            repair_button.setStyleSheet("""
+                QPushButton {
+                    background: qlineargradient(
+                        x1: 0, y1: 0, x2: 0, y2: 1,
+                        stop: 0 #F5F5F5, stop: 1 #E0E0E0
+                    );
+                    border: 1px solid #BDBDBD;
+                    border-radius: 4px;
+                }
+                QPushButton:hover {
+                    background: qlineargradient(
+                        x1: 0, y1: 0, x2: 0, y2: 1,
+                        stop: 0 #E0E0E0, stop: 1 #BDBDBD
+                    );
+                }
+                QPushButton:pressed {
+                    padding: 2px -2px -2px 2px;
+                }
+            """)
             
             self.stats_layout.addWidget(row_widget)
 
@@ -719,14 +782,23 @@ class MainWindow(QMainWindow):
             QTableWidget {
                 border: 1px solid #BDBDBD;
                 border-radius: 8px;
-                background-color: white;
+                background: qlineargradient(
+                    x1: 0, y1: 0, x2: 0, y2: 1,
+                    stop: 0 #FFFFFF, stop: 1 #F5F5F5
+                );
             }
             QTableWidget::item {
                 padding: 2px;
                 font-size: 11px;
             }
+            QTableWidget::item:hover {
+                background: rgba(33, 150, 243, 0.1);
+            }
             QHeaderView::section {
-                background-color: #F5F5F5;
+                background: qlineargradient(
+                    x1: 0, y1: 0, x2: 0, y2: 1,
+                    stop: 0 #F5F5F5, stop: 1 #E0E0E0
+                );
                 padding: 2px;
                 font-size: 11px;
                 border: 1px solid #BDBDBD;
@@ -739,6 +811,27 @@ class MainWindow(QMainWindow):
         shadow.setColor(QColor(0, 0, 0, 50))
         shadow.setOffset(0, 2)
         widget.setGraphicsEffect(shadow)
+
+    def add_hover_animation(self, widget):
+        """Добавляет анимацию при наведении"""
+        animation = QPropertyAnimation(widget, b"geometry")
+        animation.setDuration(100)
+        animation.setEasingCurve(QEasingCurve.OutCubic)
+        
+        def on_hover_enter():
+            geometry = widget.geometry()
+            animation.setStartValue(geometry)
+            animation.setEndValue(geometry.adjusted(-2, -2, 2, 2))
+            animation.start()
+        
+        def on_hover_leave():
+            geometry = widget.geometry()
+            animation.setStartValue(geometry)
+            animation.setEndValue(geometry.adjusted(2, 2, -2, -2))
+            animation.start()
+        
+        widget.enterEvent = lambda e: on_hover_enter()
+        widget.leaveEvent = lambda e: on_hover_leave()
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
