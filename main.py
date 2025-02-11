@@ -1,7 +1,7 @@
 import sys
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                               QHBoxLayout, QTableWidget, QTableWidgetItem, QLabel, 
-                              QComboBox, QPushButton, QHeaderView, QFrame, QMessageBox, QLineEdit)
+                              QComboBox, QPushButton, QHeaderView, QFrame, QMessageBox, QLineEdit, QGraphicsDropShadowEffect)
 from PySide6.QtCore import Qt, QSize
 from PySide6.QtGui import QColor
 import pandas as pd
@@ -69,7 +69,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Учет использования опок")
-        self.setFixedSize(1255, 800)
+        self.setFixedSize(1370, 800)
         
         self.current_date = datetime.now()
         self.opoka_data_manager = OpokaDataManager()
@@ -94,6 +94,26 @@ class MainWindow(QMainWindow):
         
         export_button = QPushButton("Экспорт статистики")
         export_button.clicked.connect(self.export_statistics)
+        
+        # Стилизация кнопок
+        button_style = """
+            QPushButton {
+                background-color: #2196F3;
+                color: white;
+                border-radius: 4px;
+                padding: 5px 10px;
+                font-size: 11px;
+            }
+            QPushButton:hover {
+                background-color: #1976D2;
+            }
+            QPushButton:pressed {
+                background-color: #0D47A1;
+            }
+        """
+        
+        self.recalc_button.setStyleSheet(button_style)
+        export_button.setStyleSheet(button_style)
         
         top_layout.addWidget(date_label)
         top_layout.addWidget(self.recalc_button)
@@ -130,6 +150,7 @@ class MainWindow(QMainWindow):
         main_container = QWidget()
         main_layout = QVBoxLayout(main_container)
         main_layout.setSpacing(10)
+        main_layout.setContentsMargins(10, 10, 10, 10)
         
         # Добавляем верхнюю панель
         main_layout.addWidget(header_widget)
@@ -138,6 +159,7 @@ class MainWindow(QMainWindow):
         content_container = QWidget()
         content_layout = QHBoxLayout(content_container)
         content_layout.setSpacing(10)
+        content_layout.setContentsMargins(0, 0, 0, 0)
         
         # Добавляем таблицу
         table_container = QWidget()
@@ -152,6 +174,7 @@ class MainWindow(QMainWindow):
         right_panel = QWidget()
         right_layout = QVBoxLayout(right_panel)
         right_layout.setSpacing(10)
+        right_layout.setContentsMargins(10, 10, 10, 10)
         
         # Добавляем статистику использования
         self.stats_widget = QFrame()
@@ -184,6 +207,28 @@ class MainWindow(QMainWindow):
         
         # Устанавливаем главный контейнер
         self.setCentralWidget(main_container)
+        
+        # Добавляем стили
+        stats_style = """
+            QFrame {
+                background-color: white;
+                border: 1px solid #BDBDBD;
+                border-radius: 8px;
+            }
+            QLabel {
+                font-size: 11px;
+            }
+            QLabel[header="true"] {
+                font-weight: bold;
+                color: #1976D2;
+            }
+        """
+        
+        self.stats_widget.setStyleSheet(stats_style)
+        
+        # Добавляем тени
+        self.add_shadow(self.stats_widget)
+        self.add_shadow(self.table)
         
         # Инициализируем таблицу
         self.update_table(self.current_date)
@@ -218,8 +263,23 @@ class MainWindow(QMainWindow):
             df['Плавка_дата'] = pd.to_datetime(df['Плавка_дата'], format='%d.%m.%Y')
             usage_history = self.opoka_data_manager.load_history()
             
-            # Обновляем счетчики использований после ремонта
+            # Обновляем счетчики использований и последнее использование
             for opoka_num in range(1, 12):
+                # Находим последнее использование опоки
+                last_use = None
+                for _, row in df.sort_values('Плавка_дата', ascending=False).iterrows():
+                    if any(pd.notna(row[col]) and int(row[col]) == opoka_num 
+                          for col in ['Сектор_A_опоки', 'Сектор_B_опоки', 
+                                    'Сектор_C_опоки', 'Сектор_D_опоки']):
+                        last_use = row['Плавка_дата']
+                        break
+                
+                # Обновляем дату последнего использования
+                usage_history[str(opoka_num)]["last_use"] = (
+                    last_use.strftime('%Y-%m-%d') if last_use else None
+                )
+                
+                # Остальной код подсчета использований
                 last_repair_date = usage_history[str(opoka_num)]["last_repair_date"]
                 if last_repair_date:
                     last_repair_date = datetime.strptime(last_repair_date, '%Y-%m-%d')
@@ -568,6 +628,32 @@ class MainWindow(QMainWindow):
         search_layout.addWidget(search_label)
         search_layout.addWidget(self.search_input)
         
+        # Стиль для комбобокса и поля поиска
+        input_style = """
+            QComboBox, QLineEdit {
+                border: 1px solid #BDBDBD;
+                border-radius: 4px;
+                padding: 3px;
+                background-color: white;
+                font-size: 11px;
+            }
+            QComboBox:hover, QLineEdit:hover {
+                border: 1px solid #2196F3;
+            }
+            QComboBox::drop-down {
+                border: none;
+                padding-right: 5px;
+            }
+            QComboBox::down-arrow {
+                image: url(down_arrow.png);
+                width: 12px;
+                height: 12px;
+            }
+        """
+        
+        self.month_dropdown.setStyleSheet(input_style)
+        self.search_input.setStyleSheet(input_style)
+        
         return search_widget
 
     def filter_table(self, text):
@@ -588,6 +674,16 @@ class MainWindow(QMainWindow):
         monthly_stats = QWidget()
         layout = QVBoxLayout(monthly_stats)
         
+        # Добавляем заголовок
+        header = QLabel("Месячная статистика")
+        header.setStyleSheet("""
+            font-weight: bold;
+            font-size: 11px;
+            color: #1976D2;
+            padding-bottom: 5px;
+        """)
+        layout.addWidget(header)
+        
         current_month = self.month_dropdown.currentData()
         usage_history = self.opoka_data_manager.load_history()
         
@@ -606,6 +702,15 @@ class MainWindow(QMainWindow):
         
         label = QLabel(stats_text)
         layout.addWidget(label)
+        
+        # Улучшаем стиль текста статистики
+        label.setStyleSheet("""
+            background-color: white;
+            padding: 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            line-height: 1.4;
+        """)
         
         return monthly_stats
 
@@ -627,6 +732,13 @@ class MainWindow(QMainWindow):
                 border: 1px solid #BDBDBD;
             }
         """)
+
+    def add_shadow(self, widget):
+        shadow = QGraphicsDropShadowEffect()
+        shadow.setBlurRadius(10)
+        shadow.setColor(QColor(0, 0, 0, 50))
+        shadow.setOffset(0, 2)
+        widget.setGraphicsEffect(shadow)
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
