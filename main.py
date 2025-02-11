@@ -164,13 +164,37 @@ class MainWindow(QMainWindow):
         self.update_table(selected_date)
 
     def update_table(self, selected_date):
-        # Очищаем таблицу
-        self.table.clear()
-        
         try:
-            # Загружаем данные
             df = pd.read_excel(self.opoka_data_manager.excel_file)
             df['Плавка_дата'] = pd.to_datetime(df['Плавка_дата'], format='%d.%m.%Y')
+            usage_history = self.opoka_data_manager.load_history()
+            
+            # Обновляем счетчики использований после ремонта
+            for opoka_num in range(1, 12):
+                last_repair_date = usage_history[str(opoka_num)]["last_repair_date"]
+                if last_repair_date:
+                    last_repair_date = datetime.strptime(last_repair_date, '%Y-%m-%d')
+                    
+                    # Считаем использования после последнего ремонта
+                    current_uses = 0
+                    filtered_df = df[df['Плавка_дата'] > last_repair_date]
+                    
+                    for _, row in filtered_df.iterrows():
+                        day_uses = sum(1 for col in ['Сектор_A_опоки', 'Сектор_B_опоки', 
+                                                   'Сектор_C_опоки', 'Сектор_D_опоки']
+                                     if pd.notna(row[col]) and int(row[col]) == opoka_num)
+                        current_uses += day_uses
+                    
+                    usage_history[str(opoka_num)]["count"] = current_uses
+                    
+                    # Если достигнут лимит использований, отправляем в ремонт
+                    if current_uses >= 100:
+                        self.send_to_repair(opoka_num)
+            
+            self.opoka_data_manager.save_history(usage_history)
+            
+            # Обновляем таблицу
+            self.table.clear()
             
             # Настраиваем таблицу
             self.table.setRowCount(11)  # для опок 1-11
@@ -215,6 +239,20 @@ class MainWindow(QMainWindow):
         except Exception as e:
             self.status_label.setText(f"Ошибка: {str(e)}")
             self.status_label.setStyleSheet("color: red;")
+
+    def get_row_color(self, opoka_data):
+        """Определяет цвет фона строки на основе текущего количества использований"""
+        count = int(opoka_data["count"])
+        
+        if opoka_data.get("in_repair"):
+            return "#BDBDBD"  # Серый для ремонта
+        elif opoka_data.get("auto_reset"):
+            return "#E3F2FD"  # Голубой для простоя
+        elif count >= 91:
+            return "#FFCDD2"  # Красный для 91-100
+        elif count >= 80:
+            return "#FFF9C4"  # Желтый для 80-90
+        return "#FFFFFF"  # Белый для остальных случаев
 
     def update_statistics(self):
         # Очищаем текущую статистику
@@ -262,10 +300,17 @@ class MainWindow(QMainWindow):
                 self.get_status_text(opoka_data)
             ]
             
-            for text, width in zip(data, widths):
+            # Определяем цвет текста для значения count
+            count_color = "red" if int(opoka_data["count"]) >= 91 else "black"
+            
+            for idx, (text, width) in enumerate(zip(data, widths)):
                 label = QLabel(text)
                 label.setFixedWidth(width)
-                label.setStyleSheet("font-size: 11px;")
+                # Применяем красный цвет только к полю "Тек." если count >= 91
+                if idx == 1 and count_color == "red":
+                    label.setStyleSheet("font-size: 11px; color: red; font-weight: bold;")
+                else:
+                    label.setStyleSheet("font-size: 11px;")
                 row_layout.addWidget(label)
             
             # Добавляем кнопку ремонта
@@ -277,9 +322,14 @@ class MainWindow(QMainWindow):
             repair_button.setText("🔧" if not opoka_data["in_repair"] else "↩")
             row_layout.addWidget(repair_button)
             
-            # Устанавливаем цвет фона
-            bg_color = self.get_status_color(opoka_data)
-            row_widget.setStyleSheet(f"background-color: {bg_color}; border-radius: 3px;")
+            # Устанавливаем цвет фона строки
+            bg_color = self.get_row_color(opoka_data)
+            row_widget.setStyleSheet(f"""
+                background-color: {bg_color}; 
+                border-radius: 3px;
+                margin: 1px;
+                padding: 2px;
+            """)
             
             self.stats_layout.addWidget(row_widget)
 
@@ -334,7 +384,6 @@ class MainWindow(QMainWindow):
         for opoka in ['2', '5']:
             usage_history[opoka].update({
                 "last_repair_date": "2025-01-28",
-                "count": 0,
                 "in_repair": False,
                 "auto_reset": False
             })
