@@ -1,7 +1,7 @@
 import sys
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                               QHBoxLayout, QTableWidget, QTableWidgetItem, QLabel, 
-                              QComboBox, QPushButton, QHeaderView, QFrame)
+                              QComboBox, QPushButton, QHeaderView, QFrame, QMessageBox, QLineEdit)
 from PySide6.QtCore import Qt, QSize
 from PySide6.QtGui import QColor
 import pandas as pd
@@ -96,9 +96,14 @@ class MainWindow(QMainWindow):
         self.month_dropdown = QComboBox()
         self.setup_month_dropdown()
         
+        # Добавляем кнопку экспорта
+        export_button = QPushButton("Экспорт статистики")
+        export_button.clicked.connect(self.export_statistics)
+        
         header_layout.addWidget(date_label)
         header_layout.addWidget(self.recalc_button)
         header_layout.addWidget(self.month_dropdown)
+        header_layout.addWidget(export_button)
         header_layout.addStretch()
         
         # Добавляем статус
@@ -229,8 +234,10 @@ class MainWindow(QMainWindow):
                         count += len(day_data[day_data[col] == opoka_num])
                     
                     item = QTableWidgetItem(str(count) if count > 0 else "")
-                    if count > 0:
-                        item.setBackground(QColor("#C8E6C9"))  # Зеленый цвет
+                    if count > 3:  # Высокая нагрузка в день
+                        item.setBackground(QColor("#FFE0B2"))  # Оранжевый
+                    elif count > 0:
+                        item.setBackground(QColor("#C8E6C9"))  # Зеленый
                     self.table.setItem(opoka_num-1, day, item)
             
             # Обновляем статистику
@@ -331,6 +338,18 @@ class MainWindow(QMainWindow):
                 padding: 2px;
             """)
             
+            # Создаем детальную подсказку
+            tooltip_text = (
+                f"Опока №{i}\n"
+                f"Текущих использований: {opoka_data['count']}\n"
+                f"Всего использований: {opoka_data['total_count']}\n"
+                f"Количество ремонтов: {opoka_data['repair_count']}\n"
+                f"Последний ремонт: {opoka_data['last_repair_date'] or 'Не было'}\n"
+                f"Последнее использование: {opoka_data['last_use'] or 'Не использовалась'}"
+            )
+            
+            row_widget.setToolTip(tooltip_text)
+            
             self.stats_layout.addWidget(row_widget)
 
     def get_status_text(self, opoka_data):
@@ -357,14 +376,23 @@ class MainWindow(QMainWindow):
             self.send_to_repair(opoka_num)
 
     def send_to_repair(self, opoka_num):
-        usage_history = self.opoka_data_manager.load_history()
-        usage_history[str(opoka_num)]["repair_count"] += 1
-        usage_history[str(opoka_num)]["count"] = 0  # Сбрасываем текущий счетчик
-        usage_history[str(opoka_num)]["in_repair"] = True
-        usage_history[str(opoka_num)]["last_use"] = None
-        usage_history[str(opoka_num)]["last_repair_date"] = datetime.now().strftime('%Y-%m-%d')
-        self.opoka_data_manager.save_history(usage_history)
-        self.update_table(datetime.strptime(self.month_dropdown.currentData(), '%Y-%m'))
+        reply = QMessageBox.question(
+            self,
+            'Подтверждение',
+            f'Отправить опоку №{opoka_num} в ремонт?',
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+        
+        if reply == QMessageBox.Yes:
+            usage_history = self.opoka_data_manager.load_history()
+            usage_history[str(opoka_num)]["repair_count"] += 1
+            usage_history[str(opoka_num)]["count"] = 0  # Сбрасываем текущий счетчик
+            usage_history[str(opoka_num)]["in_repair"] = True
+            usage_history[str(opoka_num)]["last_use"] = None
+            usage_history[str(opoka_num)]["last_repair_date"] = datetime.now().strftime('%Y-%m-%d')
+            self.opoka_data_manager.save_history(usage_history)
+            self.update_table(datetime.strptime(self.month_dropdown.currentData(), '%Y-%m'))
 
     def return_from_repair(self, opoka_num):
         usage_history = self.opoka_data_manager.load_history()
@@ -447,6 +475,91 @@ class MainWindow(QMainWindow):
         except Exception as e:
             print(f"Ошибка при пересчете истории: {str(e)}")
             return None
+
+    def export_statistics(self):
+        try:
+            usage_history = self.opoka_data_manager.load_history()
+            export_data = []
+            
+            for i in range(1, 12):
+                opoka_data = usage_history[str(i)]
+                export_data.append({
+                    'Номер опоки': i,
+                    'Текущие использования': opoka_data['count'],
+                    'Всего использований': opoka_data['total_count'],
+                    'Количество ремонтов': opoka_data['repair_count'],
+                    'Последний ремонт': opoka_data['last_repair_date'],
+                    'Последнее использование': opoka_data['last_use'],
+                    'Статус': self.get_status_text(opoka_data)
+                })
+            
+            df = pd.DataFrame(export_data)
+            df.to_excel('статистика_опок.xlsx', index=False)
+            
+            QMessageBox.information(
+                self,
+                'Успех',
+                'Статистика успешно экспортирована в файл "статистика_опок.xlsx"'
+            )
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                'Ошибка',
+                f'Не удалось экспортировать статистику: {str(e)}'
+            )
+
+    def add_search_widget(self):
+        search_widget = QWidget()
+        search_layout = QHBoxLayout(search_widget)
+        
+        search_label = QLabel("Поиск опоки:")
+        search_input = QLineEdit()
+        search_input.setPlaceholderText("Введите номер опоки...")
+        search_input.textChanged.connect(self.filter_table)
+        
+        search_layout.addWidget(search_label)
+        search_layout.addWidget(search_input)
+        
+        return search_widget
+
+    def filter_table(self, text):
+        if not text:
+            # Показать все строки
+            for row in range(self.table.rowCount()):
+                self.table.showRow(row)
+        else:
+            # Скрыть строки, которые не соответствуют поиску
+            for row in range(self.table.rowCount()):
+                item = self.table.item(row, 0)
+                if item and text in item.text():
+                    self.table.showRow(row)
+                else:
+                    self.table.hideRow(row)
+
+    def add_monthly_stats(self):
+        monthly_stats = QWidget()
+        layout = QVBoxLayout(monthly_stats)
+        
+        current_month = self.month_dropdown.currentData()
+        usage_history = self.opoka_data_manager.load_history()
+        
+        total_uses = sum(int(data["count"]) for data in usage_history.values())
+        repairs_this_month = sum(
+            1 for data in usage_history.values() 
+            if data["last_repair_date"] 
+            and data["last_repair_date"].startswith(current_month)
+        )
+        
+        stats_text = (
+            f"Статистика за {self.month_dropdown.currentText()}:\n"
+            f"Всего использований: {total_uses}\n"
+            f"Ремонтов за месяц: {repairs_this_month}"
+        )
+        
+        label = QLabel(stats_text)
+        layout.addWidget(label)
+        
+        return monthly_stats
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
