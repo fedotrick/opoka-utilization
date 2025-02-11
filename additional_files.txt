@@ -1,0 +1,3 @@
+opoka_usage_history.json
+plavka.xlsx
+icons/*.ico
