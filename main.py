@@ -75,71 +75,115 @@ class MainWindow(QMainWindow):
         self.opoka_data_manager = OpokaDataManager()
         self.data_cache = DataCache()
         
-        # Создаем центральный виджет
-        central_widget = QWidget()
-        self.setCentralWidget(central_widget)
-        main_layout = QVBoxLayout(central_widget)
-        
-        # Создаем верхнюю панель
+        # Создаем верхнюю панель с двумя строками
         header_widget = QWidget()
-        header_layout = QHBoxLayout(header_widget)
+        header_layout = QVBoxLayout(header_widget)
+        header_layout.setSpacing(5)
         
-        # Добавляем дату
+        # Первая строка верхней панели
+        top_row = QWidget()
+        top_layout = QHBoxLayout(top_row)
+        top_layout.setContentsMargins(0, 0, 0, 0)
+        
+        # Добавляем дату и кнопки
         date_label = QLabel(f"Дата: {self.current_date.strftime('%d.%m.%Y')}")
         date_label.setStyleSheet("font-size: 12px;")
         
-        # Кнопка пересчета
         self.recalc_button = QPushButton("Пересчитать историю")
         self.recalc_button.clicked.connect(self.recalculate_and_update)
         
-        # Выпадающий список с месяцами
-        self.month_dropdown = QComboBox()
-        self.setup_month_dropdown()
-        
-        # Добавляем кнопку экспорта
         export_button = QPushButton("Экспорт статистики")
         export_button.clicked.connect(self.export_statistics)
         
-        header_layout.addWidget(date_label)
-        header_layout.addWidget(self.recalc_button)
-        header_layout.addWidget(self.month_dropdown)
-        header_layout.addWidget(export_button)
-        header_layout.addStretch()
+        top_layout.addWidget(date_label)
+        top_layout.addWidget(self.recalc_button)
+        top_layout.addWidget(export_button)
+        top_layout.addStretch()
         
-        # Добавляем статус
-        self.status_label = QLabel()
-        self.status_label.setStyleSheet("font-size: 12px;")
+        # Вторая строка верхней панели
+        bottom_row = QWidget()
+        bottom_layout = QHBoxLayout(bottom_row)
+        bottom_layout.setContentsMargins(0, 0, 0, 0)
         
-        # Создаем основной контейнер для таблицы и статистики
-        content_widget = QWidget()
-        content_layout = QHBoxLayout(content_widget)
+        # Добавляем выбор месяца и поиск
+        month_label = QLabel("Месяц:")
+        month_label.setStyleSheet("font-size: 12px;")
         
-        # Создаем таблицу
+        self.month_dropdown = QComboBox()
+        self.month_dropdown.setFixedWidth(200)
+        self.setup_month_dropdown()
+        
+        # Добавляем поиск
+        search_widget = self.add_search_widget()
+        
+        bottom_layout.addWidget(month_label)
+        bottom_layout.addWidget(self.month_dropdown)
+        bottom_layout.addSpacing(20)
+        bottom_layout.addWidget(search_widget)
+        bottom_layout.addStretch()
+        
+        # Добавляем строки в верхнюю панель
+        header_layout.addWidget(top_row)
+        header_layout.addWidget(bottom_row)
+        
+        # Создаем основной контейнер
+        main_container = QWidget()
+        main_layout = QVBoxLayout(main_container)
+        main_layout.setSpacing(10)
+        
+        # Добавляем верхнюю панель
+        main_layout.addWidget(header_widget)
+        
+        # Создаем контейнер для таблицы и правой панели
+        content_container = QWidget()
+        content_layout = QHBoxLayout(content_container)
+        content_layout.setSpacing(10)
+        
+        # Добавляем таблицу
+        table_container = QWidget()
+        table_layout = QVBoxLayout(table_container)
+        table_layout.setContentsMargins(0, 0, 0, 0)
+        
         self.table = QTableWidget()
-        self.table.setStyleSheet("""
-            QTableWidget {
-                border: 1px solid #BDBDBD;
-                border-radius: 8px;
-            }
-            QTableWidget::item {
-                padding: 2px;
-                font-size: 11px;
-            }
-        """)
+        self.setup_table_style()
+        table_layout.addWidget(self.table)
         
-        # Создаем виджет статистики
+        # Создаем правую панель
+        right_panel = QWidget()
+        right_layout = QVBoxLayout(right_panel)
+        right_layout.setSpacing(10)
+        
+        # Добавляем статистику использования
         self.stats_widget = QFrame()
         self.stats_widget.setFixedWidth(250)
         self.stats_widget.setFrameStyle(QFrame.Box | QFrame.Raised)
         self.stats_layout = QVBoxLayout(self.stats_widget)
         
-        content_layout.addWidget(self.table, stretch=4)
-        content_layout.addWidget(self.stats_widget)
+        # Добавляем месячную статистику
+        monthly_stats = self.add_monthly_stats()
+        monthly_stats.setStyleSheet("""
+            QWidget {
+                background-color: #F5F5F5;
+                border-radius: 5px;
+                padding: 5px;
+            }
+            QLabel {
+                font-size: 11px;
+            }
+        """)
+        
+        right_layout.addWidget(self.stats_widget)
+        right_layout.addWidget(monthly_stats)
+        
+        # Добавляем компоненты в content_layout
+        content_layout.addWidget(table_container, stretch=4)
+        content_layout.addWidget(right_panel)
         
         # Добавляем все в главный layout
-        main_layout.addWidget(header_widget)
-        main_layout.addWidget(self.status_label)
-        main_layout.addWidget(content_widget)
+        main_layout.addWidget(content_container)
+        
+        # Устанавливаем главный контейнер
+        self.setCentralWidget(main_container)
         
         # Инициализируем таблицу
         self.update_table(self.current_date)
@@ -511,14 +555,18 @@ class MainWindow(QMainWindow):
     def add_search_widget(self):
         search_widget = QWidget()
         search_layout = QHBoxLayout(search_widget)
+        search_layout.setContentsMargins(0, 0, 0, 0)
         
         search_label = QLabel("Поиск опоки:")
-        search_input = QLineEdit()
-        search_input.setPlaceholderText("Введите номер опоки...")
-        search_input.textChanged.connect(self.filter_table)
+        search_label.setStyleSheet("font-size: 12px;")
+        
+        self.search_input = QLineEdit()
+        self.search_input.setPlaceholderText("Введите номер опоки...")
+        self.search_input.setFixedWidth(150)
+        self.search_input.textChanged.connect(self.filter_table)
         
         search_layout.addWidget(search_label)
-        search_layout.addWidget(search_input)
+        search_layout.addWidget(self.search_input)
         
         return search_widget
 
@@ -560,6 +608,25 @@ class MainWindow(QMainWindow):
         layout.addWidget(label)
         
         return monthly_stats
+
+    def setup_table_style(self):
+        self.table.setStyleSheet("""
+            QTableWidget {
+                border: 1px solid #BDBDBD;
+                border-radius: 8px;
+                background-color: white;
+            }
+            QTableWidget::item {
+                padding: 2px;
+                font-size: 11px;
+            }
+            QHeaderView::section {
+                background-color: #F5F5F5;
+                padding: 2px;
+                font-size: 11px;
+                border: 1px solid #BDBDBD;
+            }
+        """)
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
