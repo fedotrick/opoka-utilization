@@ -84,6 +84,11 @@ config/
 ### Руководства
 - [Руководство пользователя](docs/user-guide.md)
 - [Руководство разработчика](docs/developer-guide.md)
+## Скриншоты
+![image](https://github.com/user-attachments/assets/c541d876-5c8a-48b2-96f1-5504ba94ec92)
+![image](https://github.com/user-attachments/assets/e86bd75f-99f5-4c16-82d7-3762826abdc7)
+![image](https://github.com/user-attachments/assets/4b8d469d-dcf8-4f89-88e4-e183437d3432)
+![image](https://github.com/user-attachments/assets/8d01a112-7fb4-4feb-8edc-97e92f587092)
 
 ## 🔒 Безопасность
 - Пока отсутствует
