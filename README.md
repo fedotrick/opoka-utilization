@@ -106,9 +106,9 @@ config/
 MIT License. Подробности в файле [LICENSE](LICENSE)
 
 ## 👥 Команда
-- [Имя Фамилия](https://github.com/fedotrick) - Ведущий разработчик
-- [Имя Фамилия](https://github.com/fedotrick) - DevOps инженер
-- [Имя Фамилия](https://github.com/fedotrick) - Frontend разработчик
+- [Андрей Федотов](https://github.com/fedotrick) - Ведущий разработчик
+- [Андрей Федотов](https://github.com/fedotrick) - DevOps инженер
+- [Андрей Федотов](https://github.com/fedotrick) - Frontend разработчик
 
 ## 📞 Контакты
 - Email: warriorpacis@yandex.ru
