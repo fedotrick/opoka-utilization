@@ -11,6 +11,22 @@ import calendar
 from db_operations import OpokaDB
 from db_init import init_database
 
+# Добавляем словарь с переводами месяцев
+MONTHS_RU = {
+    'January': 'Январь',
+    'February': 'Февраль',
+    'March': 'Март',
+    'April': 'Апрель',
+    'May': 'Май',
+    'June': 'Июнь',
+    'July': 'Июль',
+    'August': 'Август',
+    'September': 'Сентябрь',
+    'October': 'Октябрь',
+    'November': 'Ноябрь',
+    'December': 'Декабрь'
+}
+
 class DataCache:
     def __init__(self):
         self.df = None
@@ -245,19 +261,25 @@ class MainWindow(QMainWindow):
         self.add_shadow(self.table)
 
     def setup_month_dropdown(self):
-        months = []
-        for year in range(self.current_date.year - 1, self.current_date.year + 1):
-            for month in range(1, 13):
-                if year == self.current_date.year and month > self.current_date.month:
-                    continue
-                month_str = f"{year}-{month:02d}"
-                month_name = f"{calendar.month_name[month]} {year}"
-                self.month_dropdown.addItem(month_name, month_str)
-        
-        current_month_idx = self.month_dropdown.findData(
-            f"{self.current_date.year}-{self.current_date.month:02d}"
-        )
-        self.month_dropdown.setCurrentIndex(current_month_idx)
+        # Получаем список месяцев, за которые есть данные
+        conn = self.db.get_connection()
+        cursor = conn.cursor()
+        cursor.execute('''
+        SELECT DISTINCT strftime('%Y-%m', use_date) as month
+        FROM usage_records
+        ORDER BY month DESC
+        ''')
+        available_months = cursor.fetchall()
+        conn.close()
+
+        # Добавляем месяцы в выпадающий список
+        for month_data in available_months:
+            month_str = month_data[0]  # формат 'YYYY-MM'
+            year, month = map(int, month_str.split('-'))
+            month_name = calendar.month_name[month]  # получаем название месяца
+            month_ru = MONTHS_RU[month_name]  # переводим на русский
+            self.month_dropdown.addItem(f"{month_ru} {year}", month_str)
+
         self.month_dropdown.currentIndexChanged.connect(self.on_month_changed)
 
     def on_month_changed(self):
@@ -627,8 +649,11 @@ class MainWindow(QMainWindow):
         # Получаем статистику за месяц из базы данных
         monthly_data = self.db.get_monthly_stats(year, month)
         
+        # Переводим название месяца
+        month_ru = MONTHS_RU[calendar.month_name[month].capitalize()]
+        
         stats_text = (
-            f"Статистика за {self.month_dropdown.currentText()}:\n"
+            f"Статистика за {month_ru} {year}:\n"
             f"Всего использований: {monthly_data['total_uses']}\n"
             f"Ремонтов за месяц: {monthly_data['repairs_count']}"
         )

@@ -172,13 +172,30 @@ class OpokaDB:
                 
                 # Считаем текущие использования (после последнего ремонта)
                 if last_repair:
+                    # Проверяем, находится ли опока в ремонте
                     cursor.execute('''
-                    SELECT COUNT(*) 
-                    FROM usage_records 
+                    SELECT COUNT(*) > 0 
+                    FROM repair_history 
                     WHERE opoka_id = ? 
-                    AND date(use_date) >= date(?)
-                    ''', (opoka_id, last_repair[0]))
-                    current_count = cursor.fetchone()[0]
+                    AND repair_end_date IS NULL
+                    AND repair_date = (
+                        SELECT MAX(repair_date) 
+                        FROM repair_history 
+                        WHERE opoka_id = ?
+                    )
+                    ''', (opoka_id, opoka_id))
+                    in_repair = cursor.fetchone()[0]
+
+                    if in_repair:
+                        current_count = 0
+                    else:
+                        cursor.execute('''
+                        SELECT COUNT(*) 
+                        FROM usage_records 
+                        WHERE opoka_id = ? 
+                        AND date(use_date) >= date(?)
+                        ''', (opoka_id, last_repair[0]))
+                        current_count = cursor.fetchone()[0]
                 else:
                     current_count = total_counts[opoka_id]
                 
