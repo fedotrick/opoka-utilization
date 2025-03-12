@@ -1,57 +1,15 @@
 import sys
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                               QHBoxLayout, QTableWidget, QTableWidgetItem, QLabel, 
-                              QComboBox, QPushButton, QHeaderView, QFrame, QMessageBox, QLineEdit, QGraphicsDropShadowEffect)
+                              QComboBox, QPushButton, QHeaderView, QFrame, QMessageBox, 
+                              QLineEdit, QGraphicsDropShadowEffect)
 from PySide6.QtCore import Qt, QSize, QPropertyAnimation, QEasingCurve
 from PySide6.QtGui import QColor, QIcon, QLinearGradient, QPalette
 import pandas as pd
 from datetime import datetime, timedelta
 import calendar
-import json
-
-class OpokaDataManager:
-    def __init__(self):
-        self.filename = 'opoka_usage_history.json'
-        self.excel_file = 'plavka.xlsx'
-        
-    def load_history(self):
-        try:
-            with open(self.filename, 'r') as f:
-                data = json.load(f)
-                # Добавляем дополнительные поля, если их нет
-                for key in data:
-                    if isinstance(data[key], (int, float)):
-                        data[key] = {
-                            "count": data[key],
-                            "total_count": data[key],
-                            "repair_count": 0,
-                            "last_use": None,
-                            "last_repair_date": None,  # Дата последнего ремонта
-                            "in_repair": False
-                        }
-                    elif "total_count" not in data[key]:
-                        data[key].update({
-                            "total_count": data[key]["count"],
-                            "repair_count": 0
-                        })
-                    elif "last_repair_date" not in data[key]:
-                        data[key].update({
-                            "last_repair_date": None
-                        })
-                return data
-        except FileNotFoundError:
-            return {str(i): {
-                "count": 0,
-                "total_count": 0,
-                "repair_count": 0,
-                "last_use": None,
-                "last_repair_date": None,
-                "in_repair": False
-            } for i in range(1, 12)}
-
-    def save_history(self, history):
-        with open(self.filename, 'w') as f:
-            json.dump(history, f, indent=4)
+from db_operations import OpokaDB
+from db_init import init_database
 
 class DataCache:
     def __init__(self):
@@ -71,10 +29,28 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Учет использования опок")
         self.setFixedSize(1370, 850)
         
-        self.current_date = datetime.now()
-        self.opoka_data_manager = OpokaDataManager()
-        self.data_cache = DataCache()
+        # Инициализируем базу данных при первом запуске
+        init_database()
         
+        self.current_date = datetime.now()
+        self.data_cache = DataCache()
+        self.db = OpokaDB()
+        
+        # Создаем основные виджеты
+        self.table = QTableWidget()
+        self.stats_widget = QFrame()
+        self.stats_layout = QVBoxLayout(self.stats_widget)
+        self.month_dropdown = QComboBox()
+        
+        # Создаем интерфейс
+        self.setup_ui()
+        self.setup_month_dropdown()
+        
+        # Обновляем данные
+        self.update_table(self.current_date)
+        self.update_repair_dates()
+
+    def setup_ui(self):
         # Создаем верхнюю панель с двумя строками
         header_widget = QWidget()
         header_layout = QVBoxLayout(header_widget)
@@ -164,7 +140,6 @@ class MainWindow(QMainWindow):
         month_label = QLabel("Месяц:")
         month_label.setStyleSheet("font-size: 12px;")
         
-        self.month_dropdown = QComboBox()
         self.month_dropdown.setFixedWidth(200)
         self.setup_month_dropdown()
         
@@ -268,10 +243,6 @@ class MainWindow(QMainWindow):
         # Добавляем тени
         self.add_shadow(self.stats_widget)
         self.add_shadow(self.table)
-        
-        # Инициализируем таблицу
-        self.update_table(self.current_date)
-        self.update_repair_dates()
 
     def setup_month_dropdown(self):
         months = []
@@ -298,55 +269,18 @@ class MainWindow(QMainWindow):
 
     def update_table(self, selected_date):
         try:
-            df = pd.read_excel(self.opoka_data_manager.excel_file)
-            df['Плавка_дата'] = pd.to_datetime(df['Плавка_дата'], format='%d.%m.%Y')
-            usage_history = self.opoka_data_manager.load_history()
+            # Обновляем данные из Excel
+            self.db.update_from_excel('plavka.xlsx')
             
-            # Обновляем счетчики использований и последнее использование
-            for opoka_num in range(1, 12):
-                # Находим последнее использование опоки
-                last_use = None
-                for _, row in df.sort_values('Плавка_дата', ascending=False).iterrows():
-                    if any(pd.notna(row[col]) and int(row[col]) == opoka_num 
-                          for col in ['Сектор_A_опоки', 'Сектор_B_опоки', 
-                                    'Сектор_C_опоки', 'Сектор_D_опоки']):
-                        last_use = row['Плавка_дата']
-                        break
-                
-                # Обновляем дату последнего использования
-                usage_history[str(opoka_num)]["last_use"] = (
-                    last_use.strftime('%Y-%m-%d') if last_use else None
-                )
-                
-                # Остальной код подсчета использований
-                last_repair_date = usage_history[str(opoka_num)]["last_repair_date"]
-                if last_repair_date:
-                    last_repair_date = datetime.strptime(last_repair_date, '%Y-%m-%d')
-                    
-                    # Считаем использования после последнего ремонта
-                    current_uses = 0
-                    filtered_df = df[df['Плавка_дата'] > last_repair_date]
-                    
-                    for _, row in filtered_df.iterrows():
-                        day_uses = sum(1 for col in ['Сектор_A_опоки', 'Сектор_B_опоки', 
-                                                   'Сектор_C_опоки', 'Сектор_D_опоки']
-                                     if pd.notna(row[col]) and int(row[col]) == opoka_num)
-                        current_uses += day_uses
-                    
-                    usage_history[str(opoka_num)]["count"] = current_uses
-                    
-                    # Если достигнут лимит использований, отправляем в ремонт
-                    if current_uses >= 100:
-                        self.send_to_repair(opoka_num)
-            
-            self.opoka_data_manager.save_history(usage_history)
+            # Получаем статистику
+            usage_history = self.db.get_all_stats()
             
             # Обновляем таблицу
             self.table.clear()
             
             # Настраиваем таблицу
-            self.table.setRowCount(11)  # для опок 1-11
-            self.table.setColumnCount(32)  # номер опоки + 31 день
+            self.table.setRowCount(11)
+            self.table.setColumnCount(32)
             
             # Устанавливаем заголовки
             headers = ['Опока'] + [str(i) for i in range(1, 32)]
@@ -358,10 +292,12 @@ class MainWindow(QMainWindow):
             self.table.horizontalHeader().resizeSection(0, 45)
             
             # Заполняем данные
+            df = self.data_cache.get_dataframe()
+            df['Плавка_дата'] = pd.to_datetime(df['Плавка_дата'], format='%d.%m.%Y')
+            
             for opoka_num in range(1, 12):
                 # Номер опоки
-                self.table.setItem(opoka_num-1, 0, 
-                                 QTableWidgetItem(f"№{opoka_num}"))
+                self.table.setItem(opoka_num-1, 0, QTableWidgetItem(f"№{opoka_num}"))
                 
                 # Данные по дням
                 for day in range(1, 32):
@@ -377,18 +313,17 @@ class MainWindow(QMainWindow):
                         count += len(day_data[day_data[col] == opoka_num])
                     
                     item = QTableWidgetItem(str(count) if count > 0 else "")
-                    if count > 3:  # Высокая нагрузка в день
-                        item.setBackground(QColor("#FFE0B2"))  # Оранжевый
+                    if count > 3:
+                        item.setBackground(QColor("#FFE0B2"))
                     elif count > 0:
-                        item.setBackground(QColor("#C8E6C9"))  # Зеленый
+                        item.setBackground(QColor("#C8E6C9"))
                     self.table.setItem(opoka_num-1, day, item)
             
             # Обновляем статистику
             self.update_statistics()
             
         except Exception as e:
-            self.status_label.setText(f"Ошибка: {str(e)}")
-            self.status_label.setStyleSheet("color: red;")
+            QMessageBox.critical(self, 'Ошибка', f'Ошибка обновления данных: {str(e)}')
 
     def get_row_color(self, opoka_data):
         """Определяет цвет фона строки на основе текущего количества использований"""
@@ -408,6 +343,9 @@ class MainWindow(QMainWindow):
         # Очищаем текущую статистику
         for i in reversed(range(self.stats_layout.count())): 
             self.stats_layout.itemAt(i).widget().deleteLater()
+        
+        # Получаем статистику из базы данных
+        usage_history = self.db.get_all_stats()
         
         # Добавляем заголовок
         header = QLabel("Статистика использования:")
@@ -432,8 +370,6 @@ class MainWindow(QMainWindow):
         self.stats_layout.addWidget(header_widget)
         
         # Добавляем данные статистики
-        usage_history = self.opoka_data_manager.load_history()
-        
         for i in range(1, 12):
             opoka_data = usage_history[str(i)]
             
@@ -536,7 +472,7 @@ class MainWindow(QMainWindow):
         return "#C8E6C9"  # Зеленый
 
     def toggle_repair(self, opoka_num):
-        usage_history = self.opoka_data_manager.load_history()
+        usage_history = self.db.get_all_stats()
         if usage_history[str(opoka_num)]["in_repair"]:
             self.return_from_repair(opoka_num)
         else:
@@ -552,20 +488,11 @@ class MainWindow(QMainWindow):
         )
         
         if reply == QMessageBox.Yes:
-            usage_history = self.opoka_data_manager.load_history()
-            usage_history[str(opoka_num)]["repair_count"] += 1
-            usage_history[str(opoka_num)]["count"] = 0  # Сбрасываем текущий счетчик
-            usage_history[str(opoka_num)]["in_repair"] = True
-            usage_history[str(opoka_num)]["last_use"] = None
-            usage_history[str(opoka_num)]["last_repair_date"] = datetime.now().strftime('%Y-%m-%d')
-            self.opoka_data_manager.save_history(usage_history)
+            self.db.send_to_repair(opoka_num)
             self.update_table(datetime.strptime(self.month_dropdown.currentData(), '%Y-%m'))
 
     def return_from_repair(self, opoka_num):
-        usage_history = self.opoka_data_manager.load_history()
-        usage_history[str(opoka_num)]["in_repair"] = False
-        usage_history[str(opoka_num)]["count"] = 0  # Сбрасываем счетчик после ремонта
-        self.opoka_data_manager.save_history(usage_history)
+        self.db.return_from_repair(opoka_num)
         self.update_table(datetime.strptime(self.month_dropdown.currentData(), '%Y-%m'))
 
     def recalculate_and_update(self):
@@ -573,79 +500,27 @@ class MainWindow(QMainWindow):
         self.update_table(self.current_date)
 
     def update_repair_dates(self):
-        usage_history = self.opoka_data_manager.load_history()
-        
-        # 28.01.2025 - опоки 2 и 5
-        for opoka in ['2', '5']:
-            usage_history[opoka].update({
-                "last_repair_date": "2025-01-28",
-                "in_repair": False,
-                "auto_reset": False
-            })
-        
-        self.opoka_data_manager.save_history(usage_history)
+        # Устанавливаем даты ремонта для опок 2 и 5
+        repair_date = "2025-01-28"
+        for opoka_id in [2, 5]:
+            self.db.manual_set_repair_end_date(opoka_id, repair_date)
 
     def recalculate_history(self):
         try:
-            df = pd.read_excel(self.opoka_data_manager.excel_file)
-            df['Плавка_дата'] = pd.to_datetime(df['Плавка_дата'], format='%d.%m.%Y')
-            df = df.sort_values('Плавка_дата')
-            
-            history = {str(i): {
-                "count": 0,
-                "total_count": 0,
-                "repair_count": 0,
-                "last_use": None,
-                "last_repair_date": None,
-                "in_repair": False
-            } for i in range(1, 12)}
-            
-            # Для каждой опоки
-            for opoka_num in range(1, 12):
-                total_uses = 0
-                current_count = 0
-                repair_dates = []
-                last_use_date = None
-                
-                # Проходим по всем записям
-                for _, row in df.iterrows():
-                    date = row['Плавка_дата']
-                    if date > pd.Timestamp('2025-02-01'):
-                        continue
-                    
-                    # Считаем использования в этот день
-                    day_uses = sum(1 for col in ['Сектор_A_опоки', 'Сектор_B_опоки', 
-                                               'Сектор_C_опоки', 'Сектор_D_опоки']
-                                 if pd.notna(row[col]) and int(row[col]) == opoka_num)
-                    
-                    if day_uses > 0:
-                        total_uses += day_uses
-                        current_count += day_uses
-                        last_use_date = date
-                        
-                        # Проверяем необходимость ремонта
-                        if current_count >= 100:
-                            repair_dates.append(date.strftime('%Y-%m-%d'))
-                            current_count = 0
-                
-                # Устанавливаем значения
-                history[str(opoka_num)].update({
-                    "total_count": total_uses,
-                    "repair_count": len(repair_dates),
-                    "count": current_count,
-                    "last_use": last_use_date.strftime('%Y-%m-%d') if last_use_date else None,
-                    "last_repair_date": repair_dates[-1] if repair_dates else None
-                })
-            
-            return history
-            
+            # Обновляем данные из Excel
+            self.db.update_from_excel('plavka.xlsx')
+            # Обновляем отображение
+            self.update_table(self.current_date)
         except Exception as e:
-            print(f"Ошибка при пересчете истории: {str(e)}")
-            return None
+            QMessageBox.critical(
+                self,
+                'Ошибка',
+                f'Ошибка при пересчете истории: {str(e)}'
+            )
 
     def export_statistics(self):
         try:
-            usage_history = self.opoka_data_manager.load_history()
+            usage_history = self.db.get_all_stats()
             export_data = []
             
             for i in range(1, 12):
@@ -737,7 +612,6 @@ class MainWindow(QMainWindow):
         monthly_stats = QWidget()
         layout = QVBoxLayout(monthly_stats)
         
-        # Добавляем заголовок
         header = QLabel("Месячная статистика")
         header.setStyleSheet("""
             font-weight: bold;
@@ -748,25 +622,20 @@ class MainWindow(QMainWindow):
         layout.addWidget(header)
         
         current_month = self.month_dropdown.currentData()
-        usage_history = self.opoka_data_manager.load_history()
+        year, month = map(int, current_month.split('-'))
         
-        total_uses = sum(int(data["count"]) for data in usage_history.values())
-        repairs_this_month = sum(
-            1 for data in usage_history.values() 
-            if data["last_repair_date"] 
-            and data["last_repair_date"].startswith(current_month)
-        )
+        # Получаем статистику за месяц из базы данных
+        monthly_data = self.db.get_monthly_stats(year, month)
         
         stats_text = (
             f"Статистика за {self.month_dropdown.currentText()}:\n"
-            f"Всего использований: {total_uses}\n"
-            f"Ремонтов за месяц: {repairs_this_month}"
+            f"Всего использований: {monthly_data['total_uses']}\n"
+            f"Ремонтов за месяц: {monthly_data['repairs_count']}"
         )
         
         label = QLabel(stats_text)
         layout.addWidget(label)
         
-        # Улучшаем стиль текста статистики
         label.setStyleSheet("""
             background-color: white;
             padding: 8px;
@@ -834,7 +703,10 @@ class MainWindow(QMainWindow):
         widget.leaveEvent = lambda e: on_hover_leave()
 
 if __name__ == '__main__':
-    app = QApplication(sys.argv)
-    window = MainWindow()
-    window.show()
-    sys.exit(app.exec()) 
+    try:
+        app = QApplication(sys.argv)
+        window = MainWindow()
+        window.show()
+        sys.exit(app.exec())
+    except Exception as e:
+        print(f"Ошибка при запуске приложения: {str(e)}") 
