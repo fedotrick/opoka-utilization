@@ -7,27 +7,56 @@ def init_repair_dates():
     # Очищаем таблицу repair_history
     cursor.execute('DELETE FROM repair_history')
     
-    # Вставляем правильные даты последнего ремонта
-    repair_dates = {
-        # opoka_id: (repair_date, repair_end_date)
-        1: ("2025-02-24", "2025-02-24"),  # не в ремонте
-        2: ("2025-03-01", "2025-03-01"),  # не в ремонте
-        3: ("2025-03-05", None),          # в ремонте
-        4: ("2025-02-12", "2025-02-12"),  # не в ремонте
-        5: ("2025-03-01", "2025-03-01"),  # не в ремонте
-        6: ("2025-03-10", None),          # в ремонте
-        7: ("2025-02-14", "2025-02-14"),  # не в ремонте
-        8: ("2025-03-11", None),          # в ремонте
-        9: ("2025-03-10", None),          # в ремонте
-        10: ("2024-07-06", None),         # в ремонте
-        11: ("2025-02-12", "2025-02-12")  # не в ремонте
+    # История ремонтов для каждой опоки
+    repair_history = {
+        1: [
+            ("2024-05-15", "2024-05-20"),
+            ("2024-09-10", "2024-09-15"),
+            ("2025-02-24", "2025-02-24")
+        ],
+        2: [
+            ("2024-06-01", "2024-06-05"),
+            ("2024-11-15", "2024-11-20"),
+            ("2025-03-01", "2025-03-01")
+        ],
+        3: [
+            ("2024-07-10", "2024-07-15"),
+            ("2024-12-20", "2024-12-25"),
+            ("2025-03-05", None)  # текущий ремонт
+        ],
+        4: [
+            ("2025-02-12", "2025-02-12")
+        ],
+        5: [
+            ("2025-03-01", "2025-03-01")
+        ],
+        6: [
+            ("2025-03-10", None)
+        ],
+        7: [
+            ("2025-02-14", "2025-02-14")
+        ],
+        8: [
+            ("2025-03-11", None)
+        ],
+        9: [
+            ("2025-03-10", None)
+        ],
+        10: [
+            ("2024-07-06", None)
+        ],
+        11: [
+            ("2025-02-12", "2025-02-12")
+        ]
     }
     
-    for opoka_id, (repair_date, repair_end_date) in repair_dates.items():
-        cursor.execute('''
-        INSERT INTO repair_history (opoka_id, repair_date, repair_end_date)
-        VALUES (?, ?, ?)
-        ''', (opoka_id, repair_date, repair_end_date))
+    # Вставляем все записи о ремонтах
+    for opoka_id, repairs in repair_history.items():
+        for repair_date, repair_end_date in repairs:
+            cursor.execute('''
+            INSERT INTO repair_history (opoka_id, repair_date, repair_end_date)
+            VALUES (?, ?, ?)
+            ''', (opoka_id, repair_date, repair_end_date))
     
     conn.commit()
     conn.close()

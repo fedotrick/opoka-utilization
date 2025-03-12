@@ -295,28 +295,41 @@ class OpokaDB:
             conn.close()
     
     def get_monthly_stats(self, year, month):
-        """Получает статистику за конкретный месяц"""
+        """Получает статистику использований и общее количество ремонтов"""
         conn = self.get_connection()
         cursor = conn.cursor()
         
-        start_date = f'{year}-{month:02d}-01'
-        end_date = f'{year}-{month:02d}-31'
+        try:
+            # Формируем начало и конец месяца для подсчета использований
+            start_date = f"{year}-{month:02d}-01"
+            if month == 12:
+                end_date = f"{year + 1}-01-01"
+            else:
+                end_date = f"{year}-{month + 1:02d}-01"
+            
+            # Считаем общее количество использований за месяц
+            cursor.execute('''
+            SELECT COUNT(*) 
+            FROM usage_records 
+            WHERE date(use_date) >= date(?) 
+            AND date(use_date) < date(?)
+            ''', (start_date, end_date))
+            total_uses = cursor.fetchone()[0]
+            
+            # Считаем сумму всех ремонтов по всем опокам
+            cursor.execute('''
+            SELECT SUM(repair_count) 
+            FROM opokas
+            ''')
+            total_repairs = cursor.fetchone()[0] or 0  # если NULL, то возвращаем 0
+            
+            return {
+                'total_uses': total_uses,
+                'repairs_count': total_repairs
+            }
         
-        cursor.execute('''
-        SELECT COUNT(*) as uses,
-               (SELECT COUNT(*) FROM opokas 
-                WHERE last_repair_date BETWEEN ? AND ?) as repairs
-        FROM usage_records 
-        WHERE use_date BETWEEN ? AND ?
-        ''', (start_date, end_date, start_date, end_date))
-        
-        result = cursor.fetchone()
-        conn.close()
-        
-        return {
-            'total_uses': result[0],
-            'repairs_count': result[1]
-        }
+        finally:
+            conn.close()
 
     def manual_set_repair_end_date(self, opoka_id, end_date):
         """Ручная установка даты окончания ремонта"""

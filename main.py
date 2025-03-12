@@ -43,7 +43,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Учет использования опок")
-        self.setFixedSize(1370, 850)
+        self.setFixedSize(1400, 900)
         
         # Инициализируем базу данных при первом запуске
         init_database()
@@ -60,7 +60,6 @@ class MainWindow(QMainWindow):
         
         # Создаем интерфейс
         self.setup_ui()
-        self.setup_month_dropdown()
         
         # Обновляем данные
         self.update_table(self.current_date)
@@ -157,7 +156,6 @@ class MainWindow(QMainWindow):
         month_label.setStyleSheet("font-size: 12px;")
         
         self.month_dropdown.setFixedWidth(200)
-        self.setup_month_dropdown()
         
         # Добавляем поиск
         search_widget = self.add_search_widget()
@@ -259,6 +257,9 @@ class MainWindow(QMainWindow):
         # Добавляем тени
         self.add_shadow(self.stats_widget)
         self.add_shadow(self.table)
+        
+        # Инициализируем выпадающий список месяцев
+        self.setup_month_dropdown()
 
     def setup_month_dropdown(self):
         # Получаем список месяцев, за которые есть данные
@@ -270,6 +271,7 @@ class MainWindow(QMainWindow):
         ORDER BY month DESC
         ''')
         available_months = cursor.fetchall()
+        print(f"Доступные месяцы: {available_months}")  # Отладочный вывод
         conn.close()
 
         # Добавляем месяцы в выпадающий список
@@ -279,6 +281,10 @@ class MainWindow(QMainWindow):
             month_name = calendar.month_name[month]  # получаем название месяца
             month_ru = MONTHS_RU[month_name]  # переводим на русский
             self.month_dropdown.addItem(f"{month_ru} {year}", month_str)
+
+        # Устанавливаем первый месяц как текущий, если есть месяцы
+        if self.month_dropdown.count() > 0:
+            self.month_dropdown.setCurrentIndex(0)
 
         self.month_dropdown.currentIndexChanged.connect(self.on_month_changed)
 
@@ -643,20 +649,25 @@ class MainWindow(QMainWindow):
         """)
         layout.addWidget(header)
         
+        # Проверяем, есть ли выбранный месяц
         current_month = self.month_dropdown.currentData()
-        year, month = map(int, current_month.split('-'))
-        
-        # Получаем статистику за месяц из базы данных
-        monthly_data = self.db.get_monthly_stats(year, month)
-        
-        # Переводим название месяца
-        month_ru = MONTHS_RU[calendar.month_name[month].capitalize()]
-        
-        stats_text = (
-            f"Статистика за {month_ru} {year}:\n"
-            f"Всего использований: {monthly_data['total_uses']}\n"
-            f"Ремонтов за месяц: {monthly_data['repairs_count']}"
-        )
+        if current_month:
+            year, month = map(int, current_month.split('-'))
+            
+            # Получаем статистику за месяц
+            monthly_data = self.db.get_monthly_stats(year, month)
+            
+            # Переводим название месяца
+            month_ru = MONTHS_RU[calendar.month_name[month].capitalize()]
+            
+            stats_text = (
+                f"Статистика за {month_ru} {year}:\n"
+                f"Всего использований: {monthly_data['total_uses']}\n"
+                f"Всего ремонтов: {monthly_data['repairs_count']}"
+            )
+        else:
+            # Если месяц не выбран, показываем сообщение по умолчанию
+            stats_text = "Нет данных для отображения"
         
         label = QLabel(stats_text)
         layout.addWidget(label)
