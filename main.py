@@ -1,4 +1,5 @@
 import sys
+import os
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                               QHBoxLayout, QTableWidget, QTableWidgetItem, QLabel, 
                               QComboBox, QPushButton, QHeaderView, QFrame, QMessageBox, 
@@ -10,6 +11,9 @@ from datetime import datetime, timedelta
 import calendar
 from db_operations import OpokaDB
 from db_init import init_database
+
+# В начале файла, после импортов
+EXCEL_PATH = r"\\192.168.1.103\Volume_1\Share\Реализация литейного цеха\Литейный цех\DataBase\plavka.xlsx"
 
 # Добавляем словарь с переводами месяцев
 MONTHS_RU = {
@@ -33,11 +37,21 @@ class DataCache:
         self.last_update = None
         
     def get_dataframe(self):
-        current_time = datetime.now()
-        if self.df is None or (current_time - self.last_update).seconds > 300:  # Обновляем каждые 5 минут
-            self.df = pd.read_excel('plavka.xlsx')
-            self.last_update = current_time
-        return self.df
+        try:
+            current_time = datetime.now()
+            if self.df is None or (current_time - self.last_update).seconds > 300:  # Обновляем каждые 5 минут
+                self.df = pd.read_excel(EXCEL_PATH)
+                self.last_update = current_time
+            return self.df
+        except Exception as e:
+            QMessageBox.critical(
+                None,
+                'Ошибка',
+                f'Не удалось прочитать файл по пути {EXCEL_PATH}.\n'
+                f'Убедитесь, что у вас есть доступ к сетевой папке.\n\n'
+                f'Ошибка: {str(e)}'
+            )
+            return pd.DataFrame()  # Возвращаем пустой DataFrame в случае ошибки
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -298,7 +312,7 @@ class MainWindow(QMainWindow):
     def update_table(self, selected_date):
         try:
             # Обновляем данные из Excel
-            self.db.update_from_excel('plavka.xlsx')
+            self.db.update_from_excel(EXCEL_PATH)
             
             # Получаем статистику
             usage_history = self.db.get_all_stats()
@@ -351,7 +365,12 @@ class MainWindow(QMainWindow):
             self.update_statistics()
             
         except Exception as e:
-            QMessageBox.critical(self, 'Ошибка', f'Ошибка обновления данных: {str(e)}')
+            QMessageBox.critical(
+                self, 
+                'Ошибка', 
+                f'Ошибка обновления данных:\n{str(e)}\n\n'
+                f'Проверьте доступ к файлу {EXCEL_PATH}'
+            )
 
     def get_row_color(self, opoka_data):
         """Определяет цвет фона строки на основе текущего количества использований"""
@@ -536,14 +555,15 @@ class MainWindow(QMainWindow):
     def recalculate_history(self):
         try:
             # Обновляем данные из Excel
-            self.db.update_from_excel('plavka.xlsx')
+            self.db.update_from_excel(EXCEL_PATH)
             # Обновляем отображение
             self.update_table(self.current_date)
         except Exception as e:
             QMessageBox.critical(
                 self,
                 'Ошибка',
-                f'Ошибка при пересчете истории: {str(e)}'
+                f'Ошибка при пересчете истории:\n{str(e)}\n\n'
+                f'Проверьте доступ к файлу {EXCEL_PATH}'
             )
 
     def export_statistics(self):
@@ -740,6 +760,19 @@ class MainWindow(QMainWindow):
 
 if __name__ == '__main__':
     try:
+        # Проверяем доступность файла
+        if not os.path.exists(EXCEL_PATH):
+            QMessageBox.critical(
+                None,
+                'Ошибка',
+                f'Файл не найден: {EXCEL_PATH}\n\n'
+                'Убедитесь, что:\n'
+                '1. Компьютер подключен к сети\n'
+                '2. У вас есть доступ к сетевой папке\n'
+                '3. Путь к файлу указан верно'
+            )
+            sys.exit(1)
+            
         app = QApplication(sys.argv)
         window = MainWindow()
         window.show()
