@@ -3,7 +3,7 @@ import os
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                               QHBoxLayout, QTableWidget, QTableWidgetItem, QLabel, 
                               QComboBox, QPushButton, QHeaderView, QFrame, QMessageBox, 
-                              QLineEdit, QGraphicsDropShadowEffect)
+                              QLineEdit, QGraphicsDropShadowEffect, QFileDialog, QDialog, QCheckBox)
 from PySide6.QtCore import Qt, QSize, QPropertyAnimation, QEasingCurve
 from PySide6.QtGui import QColor, QIcon, QLinearGradient, QPalette
 import pandas as pd
@@ -13,7 +13,7 @@ from db_operations import OpokaDB
 from db_init import init_database
 
 # В начале файла, после импортов
-EXCEL_PATH = r"\\192.168.1.103\Volume_1\Share\Реализация литейного цеха\Литейный цех\DataBase\plavka.xlsx"
+EXCEL_PATH = None  # Изначально путь не определен
 
 # Добавляем словарь с переводами месяцев
 MONTHS_RU = {
@@ -53,9 +53,75 @@ class DataCache:
             )
             return pd.DataFrame()  # Возвращаем пустой DataFrame в случае ошибки
 
+class FileSelectDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Выбор файла данных")
+        self.setFixedWidth(400)
+        
+        layout = QVBoxLayout(self)
+        
+        # Добавляем описание
+        label = QLabel("Укажите расположение файла plavka.xlsx")
+        layout.addWidget(label)
+        
+        # Кнопка выбора файла
+        self.select_button = QPushButton("Выбрать файл...")
+        self.select_button.clicked.connect(self.select_file)
+        layout.addWidget(self.select_button)
+        
+        # Путь к файлу
+        self.path_label = QLabel("")
+        layout.addWidget(self.path_label)
+        
+        # Чекбокс "Запомнить выбор"
+        self.remember_cb = QCheckBox("Запомнить выбор")
+        layout.addWidget(self.remember_cb)
+        
+        # Кнопки OK и Cancel
+        buttons_layout = QHBoxLayout()
+        self.ok_button = QPushButton("OK")
+        self.ok_button.setEnabled(False)
+        self.ok_button.clicked.connect(self.accept)
+        self.cancel_button = QPushButton("Отмена")
+        self.cancel_button.clicked.connect(self.reject)
+        
+        buttons_layout.addWidget(self.ok_button)
+        buttons_layout.addWidget(self.cancel_button)
+        layout.addLayout(buttons_layout)
+        
+        self.selected_path = None
+        
+    def select_file(self):
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Выберите файл plavka.xlsx",
+            "",
+            "Excel Files (*.xlsx *.xls)"
+        )
+        
+        if file_path:
+            try:
+                # Проверяем, можем ли мы прочитать файл
+                pd.read_excel(file_path)
+                self.selected_path = file_path
+                self.path_label.setText(file_path)
+                self.ok_button.setEnabled(True)
+            except Exception as e:
+                QMessageBox.critical(
+                    self,
+                    'Ошибка',
+                    f'Не удалось открыть файл:\n{str(e)}'
+                )
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
+        
+        # Показываем диалог выбора файла
+        if not self.get_excel_path():
+            sys.exit(1)
+            
         self.setWindowTitle("Учет использования опок")
         self.setFixedSize(1400, 900)
         
@@ -100,6 +166,9 @@ class MainWindow(QMainWindow):
         export_button = QPushButton("Экспорт статистики")
         export_button.clicked.connect(self.export_statistics)
         
+        change_file_button = QPushButton("Изменить файл")
+        change_file_button.clicked.connect(self.show_file_dialog)
+        
         # Обновленный стиль кнопок с иконками и анимацией
         button_style = """
             QPushButton {
@@ -130,12 +199,15 @@ class MainWindow(QMainWindow):
         
         self.recalc_button.setStyleSheet(button_style)
         export_button.setStyleSheet(button_style)
+        change_file_button.setStyleSheet(button_style)
         
         # Добавляем иконки к кнопкам
         self.recalc_button.setIcon(QIcon("icons/refresh.png"))  # Нужно добавить иконки
         self.recalc_button.setIconSize(QSize(16, 16))
         export_button.setIcon(QIcon("icons/export.png"))
         export_button.setIconSize(QSize(16, 16))
+        change_file_button.setIcon(QIcon("icons/file.png"))
+        change_file_button.setIconSize(QSize(16, 16))
         
         # Добавляем разделители
         line = QFrame()
@@ -158,6 +230,7 @@ class MainWindow(QMainWindow):
         top_layout.addWidget(date_label)
         top_layout.addWidget(self.recalc_button)
         top_layout.addWidget(export_button)
+        top_layout.addWidget(change_file_button)
         top_layout.addStretch()
         
         # Вторая строка верхней панели
@@ -758,21 +831,45 @@ class MainWindow(QMainWindow):
         widget.enterEvent = lambda e: on_hover_enter()
         widget.leaveEvent = lambda e: on_hover_leave()
 
+    def get_excel_path(self):
+        """Показывает диалог выбора файла Excel и сохраняет путь"""
+        global EXCEL_PATH
+        
+        # Проверяем сохраненный путь
+        config_path = os.path.join(os.path.dirname(__file__), 'config.ini')
+        if os.path.exists(config_path):
+            with open(config_path, 'r') as f:
+                line = f.readline().strip()
+                if line.startswith('EXCEL_PATH='):
+                    saved_path = line[11:]
+                    if os.path.exists(saved_path):
+                        try:
+                            pd.read_excel(saved_path)
+                            EXCEL_PATH = saved_path
+                            return True
+                        except:
+                            pass
+        
+        # Показываем диалог выбора файла
+        dialog = FileSelectDialog(self)
+        if dialog.exec() == QDialog.Accepted:
+            EXCEL_PATH = dialog.selected_path
+            
+            # Если выбрана опция "Запомнить", сохраняем путь
+            if dialog.remember_cb.isChecked():
+                with open(config_path, 'w') as f:
+                    f.write(f'EXCEL_PATH={EXCEL_PATH}')
+            
+            return True
+        return False
+
+    def show_file_dialog(self):
+        """Показывает диалог выбора файла по запросу пользователя"""
+        if self.get_excel_path():
+            self.update_table(self.current_date)
+
 if __name__ == '__main__':
     try:
-        # Проверяем доступность файла
-        if not os.path.exists(EXCEL_PATH):
-            QMessageBox.critical(
-                None,
-                'Ошибка',
-                f'Файл не найден: {EXCEL_PATH}\n\n'
-                'Убедитесь, что:\n'
-                '1. Компьютер подключен к сети\n'
-                '2. У вас есть доступ к сетевой папке\n'
-                '3. Путь к файлу указан верно'
-            )
-            sys.exit(1)
-            
         app = QApplication(sys.argv)
         window = MainWindow()
         window.show()
